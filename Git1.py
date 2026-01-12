@@ -448,6 +448,8 @@ class JobThaiRowScraper:
         console.print(f"2️⃣   ค้นหา: '[bold]{keyword}[/]' ...", style="info")
         
         try:
+            # ... (ส่วน Reset Page และพิมพ์ Keyword คงเดิม) ...
+            # ก๊อปปี้ส่วนบนมาวาง หรือใช้ของเดิมจนถึงบรรทัดกดปุ่ม Search
             reset_success = False
             try:
                 if self.safe_click('//*[@id="company-search-resume"]', By.XPATH, timeout=5):
@@ -475,10 +477,15 @@ class JobThaiRowScraper:
             console.print("   🔍 รอผลลัพธ์...", style="dim")
             time.sleep(5) 
 
-            page_src = self.driver.page_source
-            if "ไม่พบข้อมูล" in page_src or "No data found" in page_src or "ไม่พบประวัติ" in page_src:
-                console.print(f"   ⚠️ ไม่พบข้อมูล (0 Results) สำหรับ: {keyword}", style="warning")
-                return True 
+            # 🟢 [แก้] เช็ค 0 Results ให้แม่นขึ้น (ดูที่เนื้อหา ไม่ใช่ Source รวม)
+            try:
+                # ลองหาข้อความแจ้งเตือน "ไม่พบข้อมูล" ที่เป็น Element จริงๆ
+                no_data = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'ไม่พบข้อมูล') or contains(text(), 'No data found')]")
+                # ต้องเป็นข้อความที่เห็นชัดๆ ตรงกลางจอ (ไม่ใช่ hidden)
+                if no_data and no_data[0].is_displayed():
+                    console.print(f"   ⚠️ ไม่พบข้อมูล (0 Results) สำหรับ: {keyword}", style="warning")
+                    return True 
+            except: pass
 
             try:
                 WebDriverWait(self.driver, 15).until(lambda d: "ResumeDetail" in d.page_source or "KeyWord" in d.current_url)
@@ -486,14 +493,12 @@ class JobThaiRowScraper:
                 return True
             except:
                 console.print("   ❌ Timeout: หน้าเว็บไม่เปลี่ยน", style="error")
-                self.driver.save_screenshot(f"error_search_{keyword}.png")
                 return False
 
         except Exception as e:
-            console.print(f"❌ Search Error ({keyword}): {e}", style="error")
-            self.driver.save_screenshot(f"error_search_{keyword}.png")
+            console.print(f"❌ Search Error: {e}", style="error")
             return False
-
+            
     def step3_collect_all_links(self):
         collected_links = []
         page_num = 1
@@ -542,6 +547,7 @@ class JobThaiRowScraper:
         printer = progress_console if progress_console else console
         self.set_random_user_agent()
         
+        # ... (ส่วนโหลดหน้าเว็บ คงเดิม) ...
         max_retries = 3
         load_success = False
         for attempt in range(max_retries):
@@ -553,7 +559,6 @@ class JobThaiRowScraper:
             except: self.random_sleep(5, 10)
 
         if not load_success: return None, 999, None
-        
         try: self.human_scroll() 
         except: pass
         self.random_sleep(2.0, 5.0)
@@ -568,6 +573,7 @@ class JobThaiRowScraper:
                 return elem.text.strip()
             except: return ""
 
+        # ... (ส่วน XPath ตารางการศึกษา คงเดิม) ...
         edu_tables_xpath = '//*[@id="mainTableTwoColumn"]/tbody/tr/td[1]/table/tbody/tr[7]/td[2]/table'
         try:
             edu_tables = self.driver.find_elements(By.XPATH, edu_tables_xpath)
@@ -577,7 +583,8 @@ class JobThaiRowScraper:
         highest_degree_text = "-"; max_degree_score = -1
         degree_score_map = {"ปริญญาเอก": 3, "ดุษฎีบัณฑิต": 3, "Doctor": 3, "Ph.D": 3, "ปริญญาโท": 2, "มหาบัณฑิต": 2, "Master": 2, "ปริญญาตรี": 1, "บัณฑิต": 1, "Bachelor": 1}
         
-        def check_fuzzy(scraped_text, target_list, threshold=95):
+        # 🟢 [แก้] ปรับ Threshold ลดลงนิดนึง (จาก 95 เหลือ 85) เผื่อมีวรรคตอนเพี้ยน
+        def check_fuzzy(scraped_text, target_list, threshold=85): 
             if not target_list: return True
             if not scraped_text: return False
             best_score = 0
@@ -587,15 +594,23 @@ class JobThaiRowScraper:
             if best_score >= threshold: return True
             return False 
 
+        # ตัวแปรเก็บค่า Debug (เอาไว้โชว์ว่ามันเจออะไรบ้างในคนคนนี้)
+        debug_edu_list = [] 
+
         for i in range(1, total_degrees + 1):
             base_xpath = f'//*[@id="mainTableTwoColumn"]/tbody/tr/td[1]/table/tbody/tr[7]/td[2]/table[{i}]'
             curr_uni = get_val(f'{base_xpath}/tbody/tr[2]/td/div', True)
             if not curr_uni: curr_uni = get_val(f'{base_xpath}/tbody/tr[1]/td/div', True)
+            
             curr_degree = get_val(f'{base_xpath}//td[contains(., "ระดับการศึกษา")]/following-sibling::td[1]', True)
             if not curr_degree: curr_degree = get_val(f'{base_xpath}/tbody/tr[1]/td', True)
+            
             curr_faculty = get_val(f'{base_xpath}//td[contains(., "คณะ")]/following-sibling::td[1]', True)
             curr_major = get_val(f'{base_xpath}//td[contains(., "สาขา")]/following-sibling::td[1]', True)
             
+            # เก็บข้อมูลไว้ Debug
+            debug_edu_list.append(f"[{curr_degree}] {curr_uni} / {curr_faculty} / {curr_major}")
+
             score = 0
             for key, val in degree_score_map.items():
                 if key in str(curr_degree): score = val; break
@@ -606,11 +621,20 @@ class JobThaiRowScraper:
                 uni_pass = check_fuzzy(curr_uni, TARGET_UNIVERSITIES)
                 fac_pass = check_fuzzy(curr_faculty, TARGET_FACULTIES)
                 major_pass = check_fuzzy(curr_major, TARGET_MAJORS)
+                
                 if uni_pass and (fac_pass or major_pass):
                     is_qualified = True; matched_uni = curr_uni; matched_faculty = curr_faculty; matched_major = curr_major
 
-        if not is_qualified: return None, 999, None
+        # 🟢 [แก้] เพิ่ม Log Debug กรณีไม่ผ่าน
+        if not is_qualified:
+            # ปริ้นท์ออกมาดูเลยว่าทำไมไม่ผ่าน (จะได้รู้ว่าดึงค่าว่าง หรือชื่อไม่ตรง)
+            if debug_edu_list:
+                printer.print(f"   ❄️ (Skip) ไม่ตรงเงื่อนไข: {debug_edu_list}", style="dim")
+            else:
+                printer.print(f"   ❄️ (Skip) ไม่พบข้อมูลการศึกษา หรือ XPath ผิด", style="dim")
+            return None, 999, None
         
+        # ... (ส่วนดึงข้อมูลอื่นๆ คงเดิม ไปจนจบฟังก์ชัน) ...
         data['ระดับการศึกษา'] = highest_degree_text; data['มหาลัย'] = matched_uni; data['คณะ'] = matched_faculty; data['สาขา'] = matched_major
         data['รหัสใบสมัคร'] = get_val("#ResumeViewDiv [align='left'] span.white")
         
