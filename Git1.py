@@ -275,24 +275,48 @@ class JobThaiRowScraper:
             return ""
         except: return ""
 
+    # 🟢 Helper ใหม่: คลิกด้วย CDP (จำลองฮาร์ดแวร์ สร้าง isTrusted=true)
+    def cdp_click(self, element):
+        try:
+            # 1. หาพิกัดตรงกลางปุ่ม
+            rect = element.rect
+            x = rect['x'] + (rect['width'] / 2)
+            y = rect['y'] + (rect['height'] / 2)
+
+            # 2. จำลองกดเมาส์ลง (Mouse Pressed)
+            self.driver.execute_cdp_cmd("Input.dispatchMouseEvent", {
+                "type": "mousePressed",
+                "x": x,
+                "y": y,
+                "button": "left",
+                "clickCount": 1
+            })
+            
+            # 3. จำลองปล่อยเมาส์ (Mouse Released)
+            self.driver.execute_cdp_cmd("Input.dispatchMouseEvent", {
+                "type": "mouseReleased",
+                "x": x,
+                "y": y,
+                "button": "left",
+                "clickCount": 1
+            })
+            return True
+        except Exception as e:
+            console.print(f"   ❌ CDP Click Error: {e}", style="error")
+            return False
+
     # ==============================================================================
-    # 🔥 STEP 1: LOGIN (Anti-Blocker + Retry 5 Times + Cookie Fallback)
-    # ==============================================================================
-    # ==============================================================================
-    # 🔥 STEP 1 LOGIN: HYBRID CLICK + DEBUGGER (จำลองเมาส์ + ถ่ายรูปหลักฐาน)
-    # ==============================================================================
-    # ==============================================================================
-    # 🔥 STEP 1 LOGIN: CLICK & VERIFY (กดจนกว่าช่องจะโผล่)
+    # 🔥 STEP 1 LOGIN: CDP INJECTION EDITION (จำลอง Hardware Event)
     # ==============================================================================
     def step1_login(self):
         login_url = "https://www.jobthai.com/th/employer"
         max_retries = 5 
         
         for attempt in range(1, max_retries + 1):
-            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries}[/]")
+            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (CDP Mode)[/]")
             
             try:
-                # 1. Reset
+                # 1. Reset Page
                 if attempt > 1:
                     console.print("   🔄 Refreshing...", style="yellow")
                     try: self.driver.refresh()
@@ -305,73 +329,67 @@ class JobThaiRowScraper:
                     self.wait_for_page_load()
                     self.random_sleep(3, 5)
 
-                # 2. NUKE OVERLAYS
+                # 2. NUKE OVERLAYS (เคลียร์พื้นที่ก่อนยิง CDP)
                 try:
                     self.driver.execute_script("var blockers=document.querySelectorAll('#close-button,.cookie-consent,[class*=\"pdpa\"],[class*=\"popup\"]');blockers.forEach(b=>b.remove());")
                 except: pass
 
-                # 3. เปิดเมนู Login
+                # 3. เปิดเมนู Login (ด้วย CDP เพื่อความชัวร์)
                 try:
-                    menu_clicked = False
-                    # ลองกดปุ่มเมนู (ถ้ายังไม่มีฟอร์ม)
                     if not self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
-                        menu_sels = ['#menu-jobseeker-login', 'a[href*="login"]', '.icon-login']
+                        menu_sels = ['#menu-jobseeker-login', 'a[href*="login"]']
                         for sel in menu_sels:
-                            if self.safe_click(sel, By.CSS_SELECTOR, timeout=3):
-                                console.print(f"   🖱️ เปิดเมนูสำเร็จ ({sel})", style="dim")
-                                menu_clicked = True
-                                break
-                        if not menu_clicked: console.print("   ⚠️ หาปุ่มเมนูไม่เจอ (อาจจะเปิดอยู่แล้ว)", style="dim")
-                    self.random_sleep(2, 3)
+                            try:
+                                elm = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, sel)))
+                                # ใช้ CDP Click แทนการคลิกธรรมดา
+                                if self.cdp_click(elm):
+                                    console.print(f"   🖱️ CDP Click เมนูสำเร็จ: {sel}", style="dim")
+                                    time.sleep(2)
+                                    break
+                            except: continue
                 except: pass
 
                 # ---------------------------------------------------------------
-                # 🟢 4. THE HAMMER: กดแท็บ Employer ย้ำๆ จนกว่าช่องจะมา (จุดแก้ปัญหา)
+                # 🟢 4. กดแท็บ Employer ด้วย CDP (พระเอกของงาน)
                 # ---------------------------------------------------------------
-                console.print("   🔨 กำลังพยายามเลือกแท็บ 'บริษัท'...", style="info")
+                console.print("   ⚡ เตรียมยิง CDP Event ใส่แท็บ 'บริษัท'...", style="info")
                 
-                # รายชื่อตัวระบุปุ่ม Employer (กดที่ตัวหนังสือชัวร์สุด)
+                # Selector ที่แม่นยำ (เน้น ID หรือ Parent ที่เป็นปุ่มจริง)
                 tab_selectors = [
-                    "//div[contains(text(), 'บริษัท')]",      # กดที่ข้อความไทย
-                    "//div[contains(text(), 'Employer')]",    # กดที่ข้อความอังกฤษ
-                    "//*[@id='login_tab_employer']",          # ID เดิม
-                    "//li[@data-tab='employer']"              # Attribute
+                    "//*[@id='login_tab_employer']",          # ID ตรงๆ
+                    "//li[@data-tab='employer']",             # LI Wrapper
+                    "//div[contains(text(), 'บริษัท')]"       # Text fallback
                 ]
                 
                 form_ready = False
-                # วนลูปพยายามกด 3 รอบย่อย
-                for i in range(3):
-                    # ลองกดทุก Selector
+                for i in range(3): # ลองยิง 3 รอบ
                     for tab_sel in tab_selectors:
                         try:
-                            # 1. กดปุ่ม
-                            elem = self.driver.find_element(By.XPATH, tab_sel)
-                            self.driver.execute_script("arguments[0].click();", elem)
+                            # ต้องหา Element ให้เจอก่อน เพื่อเอาพิกัด
+                            elem = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.XPATH, tab_sel)))
                             
-                            # 2. รอเช็คทันทีว่าช่องกรอกโผล่มาไหม (Username/Password)
+                            # ยิง CDP!
+                            self.cdp_click(elem)
+                            
+                            # เช็คผลลัพธ์ทันที
                             try:
                                 WebDriverWait(self.driver, 3).until(
                                     EC.visibility_of_element_located((By.CSS_SELECTOR, "#login-form-username, input[name='username']"))
                                 )
                                 form_ready = True
-                                console.print("   ✅ กดติดแล้ว! เจอช่องกรอกข้อมูล", style="bold green")
-                                break # ออกจาก loop selector
-                            except:
-                                pass # ยังไม่เจอ ลองกดตัวอื่นต่อ
+                                console.print("   ✅ CDP Click สำเร็จ! (isTrusted=true) เจอฟอร์มแล้ว", style="bold green")
+                                break
+                            except: pass
                         except: continue
                     
                     if form_ready: break
-                    console.print(f"   💤 กดแล้วนิ่ง... ลองกดซ้ำรอบที่ {i+1}...", style="dim")
+                    console.print(f"   💤 ยังไม่มา... ยิง CDP ซ้ำรอบที่ {i+1}...", style="dim")
                     time.sleep(2)
-
-                # ---------------------------------------------------------------
 
                 # 5. กรอกรหัส (ถ้าฟอร์มมาแล้ว)
                 if form_ready or self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
-                    
-                    # หามุมกรอก (Scan + Iframe)
-                    user_sels = ["#login-form-username", "input[name='username']", "input[type='email']"]
-                    pass_sels = ["#login-form-password", "input[name='password']", "input[type='password']"]
+                    user_sels = ["#login-form-username", "input[name='username']"]
+                    pass_sels = ["#login-form-password", "input[name='password']"]
                     
                     def perform_login_fill():
                         for us in user_sels:
@@ -383,26 +401,21 @@ class JobThaiRowScraper:
                                         return True
                         return False
 
-                    # ลองกรอกหน้าหลัก
                     if perform_login_fill():
-                        console.print("   📝 กรอกรหัสเรียบร้อย รอตรวจสอบ...", style="info")
-                        # รอผลลัพธ์
+                        console.print("   📝 กรอกรหัสแล้ว รอตรวจสอบ...", style="info")
                         for _ in range(60):
                             time.sleep(1)
                             if "auth.jobthai.com" not in self.driver.current_url and "login" not in self.driver.current_url:
                                 console.print(f"🎉 Login สำเร็จ! (รอบที่ {attempt})", style="bold green")
                                 return True
-                    else:
-                        console.print("   ❌ เจอฟอร์มแต่พิมพ์ไม่ได้ (แปลกมาก)", style="error")
-                
                 else:
-                    console.print(f"   ❌ พยายามกดแท็บ Employer แล้วแต่ฟอร์มไม่โผล่", style="bold red")
-                    self.driver.save_screenshot(f"debug_no_form_attempt_{attempt}.png")
+                    console.print(f"   ❌ CDP Click ทำงานแล้วแต่ฟอร์มยังไม่มา", style="bold red")
+                    self.driver.save_screenshot(f"debug_cdp_fail_attempt_{attempt}.png")
 
             except Exception as e:
                 console.print(f"   ⚠️ Error รอบที่ {attempt}: {e}", style="warning")
         
-        console.print("🔄 หมดหนทาง... ใช้แผนสุดท้าย Cookie Bypass...", style="bold yellow")
+        console.print("🔄 ไม่ไหวแล้ว... ใช้ Cookie Bypass...", style="bold yellow")
         return self.login_with_cookie()
 
     # 🟢 Helper: ฟังก์ชัน Cookie (ที่เพิ่มเข้ามาแก้ Error)
