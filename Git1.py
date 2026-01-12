@@ -295,18 +295,17 @@ class JobThaiRowScraper:
     # 🔥 STEP 1 LOGIN: THE TANK EDITION (ใช้ระบบ Helper อัจฉริยะ)
     # ==============================================================================
     # ==============================================================================
-    # 🔥 STEP 1 LOGIN: LAST RESORT EDITION (พยายาม 5 รอบ ก่อนยอมแพ้ไปใช้คุกกี้)
+    # 🔥 STEP 1 LOGIN: ANTI-BLOCKER EDITION (ลบตัวบัง + กดแบบไร้เงา)
     # ==============================================================================
     def step1_login(self):
         login_url = "https://www.jobthai.com/th/employer"
-        # 🟢 ปรับเพิ่มจำนวนครั้งที่จะลองเป็น 5 รอบ (ตื้อให้นานขึ้น)
         max_retries = 5 
         
         for attempt in range(1, max_retries + 1):
             console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries}[/]")
             
             try:
-                # 1. Reset Page State
+                # 1. Reset Page & Load
                 if attempt > 1:
                     console.print("   🔄 Refreshing...", style="yellow")
                     try: self.driver.refresh()
@@ -319,63 +318,84 @@ class JobThaiRowScraper:
                     self.wait_for_page_load()
                     self.random_sleep(3, 5)
 
-                # 2. Navigation Actions
+                # 🟢 2. NUKE OVERLAYS: ลบตัวบังทุกอย่างด้วยพลัง JS (PDPA/Popup)
                 try:
-                    # Close Popup
-                    self.safe_click('//*[@id="close-button"]', By.XPATH, timeout=3)
-                    
-                    # Jobseeker Login Menu (กดเพื่อเปิดแผงล็อกอิน)
-                    # เช็คก่อนว่ามีแผง Login โผล่มาหรือยัง ถ้ามีแล้วไม่ต้องกดซ้ำ
-                    if not self.driver.find_elements(By.CSS_SELECTOR, "#login-form-username"):
-                         if not self.safe_click('//*[@id="menu-jobseeker-login"]', By.XPATH, timeout=5):
-                            console.print("   ⚠️ ปุ่มเมนูไม่ตอบสนอง (ข้ามไปหาแท็บเลย)", style="dim")
+                    self.driver.execute_script("""
+                        // ลบ Elements ที่มักจะเป็นตัวบัง
+                        var blockers = document.querySelectorAll('#close-button, .cookie-consent, [class*="pdpa"], [class*="cookie"], [class*="modal"], [class*="popup"]');
+                        blockers.forEach(b => b.remove());
+                    """)
+                    console.print("   💣 ลบตัวบัง (Overlays) ทิ้งเรียบร้อย", style="dim")
+                except: pass
 
-                    self.random_sleep(1, 2)
+                # 3. Navigation Actions (เปลี่ยนมาใช้ JS Force Click 100%)
+                try:
+                    # กดปุ่มเมนู (Force Click)
+                    # ใช้ Selector ที่กว้างขึ้นเผื่อ ID เปลี่ยน
+                    menu_selectors = ['#menu-jobseeker-login', 'a[href*="login"]', '.icon-login']
+                    menu_clicked = False
                     
-                    # Employer Tab (จุดสำคัญ)
-                    # ลองกดแท็บ Employer
-                    if self.safe_click('//*[@id="login_tab_employer"]', By.XPATH, timeout=5):
-                        console.print("   👉 กดแท็บ Employer แล้ว (รอโหลด...)", style="dim")
-                        time.sleep(5) # รอ JS Render
-                    else:
-                        # ถ้ากดแท็บไม่ได้ ลองใช้ JS บังคับโชว์ Form Employer เลย (ไม้ตายสำหรับรอบหลังๆ)
-                        if attempt >= 3:
-                            console.print("   ⚠️ หาแท็บ Employer ไม่เจอ -> ใช้ JS บังคับเลือก", style="warning")
-                            try:
-                                self.driver.execute_script("document.querySelector('#login_tab_employer').click();")
-                                time.sleep(3)
-                            except: pass
+                    for sel in menu_selectors:
+                        try:
+                            # รอให้ DOM มีของ
+                            elm = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
+                            # สั่งกดด้วย JS ทันที (ไม่สนว่าโดนบังไหม)
+                            self.driver.execute_script("arguments[0].click();", elm)
+                            menu_clicked = True
+                            console.print(f"   🖱️ กดปุ่มเมนูสำเร็จ (JS Force: {sel})", style="dim")
+                            break
+                        except: continue
+                    
+                    if not menu_clicked:
+                        console.print("   ⚠️ หาปุ่มเมนูไม่เจอ (ข้ามไปหาแท็บเลย)", style="yellow")
+
+                    self.random_sleep(2, 3)
+                    
+                    # กดแท็บ Employer (Force Click)
+                    tab_selectors = ['#login_tab_employer', 'li[data-tab="employer"]', '//div[contains(text(),"บริษัท")]']
+                    tab_clicked = False
+                    
+                    for sel in tab_selectors:
+                        try:
+                            by_type = By.XPATH if "//" in sel else By.CSS_SELECTOR
+                            t_elm = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((by_type, sel)))
+                            self.driver.execute_script("arguments[0].click();", t_elm)
+                            tab_clicked = True
+                            console.print("   👉 กดแท็บ Employer สำเร็จ (รอโหลด...)", style="dim")
+                            break
+                        except: continue
+                        
+                    if not tab_clicked:
+                         console.print("   ⚠️ กดแท็บ Employer ไม่ได้", style="dim")
+
+                    time.sleep(5) # รอให้แบบฟอร์มเด้งขึ้นมา
 
                 except Exception as e:
                     console.print(f"   ⚠️ Navigation Warning: {e}", style="dim")
 
-                # 3. Find Inputs (Smart Scanner with Helper)
+                # 4. Find Inputs (Scanner + Iframe Hunter)
                 user_input_found = False
                 
-                # Selectors List
                 user_sels = ["#login-form-username", "input[name='username']", "input[type='email']"]
                 pass_sels = ["#login-form-password", "input[name='password']", "input[type='password']"]
 
-                # ฟังก์ชันสแกนหา (ภายใน Iframe ด้วย)
                 def scan_and_fill():
-                    # A. หาในหน้าหลัก
                     for us in user_sels:
-                        if self.safe_type(us, MY_USERNAME, By.CSS_SELECTOR, timeout=3): # เพิ่มเวลาเป็น 3 วิ
-                            # ถ้าเจอ User แล้วหา Pass ต่อ
+                        # ใช้ timeout สั้นๆ ในการสแกนแต่ละตัว
+                        if self.safe_type(us, MY_USERNAME, By.CSS_SELECTOR, timeout=3):
                             for ps in pass_sels:
                                 if self.safe_type(ps, MY_PASSWORD, By.CSS_SELECTOR, timeout=2):
-                                    # กด Enter
                                     try: 
                                         self.driver.find_element(By.CSS_SELECTOR, ps).send_keys(Keys.ENTER)
                                     except: pass
                                     return True
                     return False
 
-                # เริ่มสแกน
+                # เริ่มสแกนหน้าหลัก
                 if scan_and_fill():
                     user_input_found = True
                 else:
-                    # B. หาใน Iframe (เผื่อมันซ่อน)
+                    # สแกน Iframe
                     iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
                     if iframes:
                         console.print(f"   👀 สแกน {len(iframes)} Iframes...", style="dim")
@@ -390,10 +410,10 @@ class JobThaiRowScraper:
                             except: continue
                         if not user_input_found: self.driver.switch_to.default_content()
 
-                # 4. Check Success
+                # 5. Check Success
                 if user_input_found:
                     console.print("   📝 กรอกรหัสแล้ว รอตรวจสอบ...", style="info")
-                    for _ in range(60): # รอ 60 วินาที
+                    for _ in range(60):
                         time.sleep(1)
                         if "auth.jobthai.com" not in self.driver.current_url and "login" not in self.driver.current_url:
                             console.print(f"🎉 Login สำเร็จ! (รอบที่ {attempt})", style="bold green")
@@ -404,8 +424,7 @@ class JobThaiRowScraper:
             except Exception as e:
                 console.print(f"   ⚠️ Error รอบที่ {attempt}: {e}", style="warning")
         
-        # Cookie Fallback (แผนสุดท้ายจริงๆ)
-        console.print("🔄 ลอง 5 รอบแล้วไม่ไหว... จำใจต้องใช้ Cookie Bypass...", style="bold yellow")
+        console.print("🔄 ลอง 5 รอบไม่ไหว... ใช้แผนสุดท้าย Cookie Bypass...", style="bold yellow")
         return self.login_with_cookie()
 
     def step2_search(self, keyword):
