@@ -132,7 +132,7 @@ def analyze_row_department(row):
 
 class JobThaiRowScraper:
     def __init__(self):
-        console.rule("[bold cyan]🛡️ JobThai Scraper (Tank Edition v2.0)[/]")
+        console.rule("[bold cyan]🛡️ JobThai Scraper (Tank Edition v2.1)[/]")
         self.history_file = "notification_history_uni.json" 
         self.history_data = {}
         if not os.path.exists(RESUME_IMAGE_FOLDER): os.makedirs(RESUME_IMAGE_FOLDER, exist_ok=True)
@@ -154,8 +154,6 @@ class JobThaiRowScraper:
         opts.add_argument("--lang=th-TH")
         opts.add_argument("--disable-blink-features=AutomationControlled")
         opts.add_argument("--disable-notifications")
-        
-        # เพิ่ม Flag ความเสถียร
         opts.add_argument("--dns-prefetch-disable")
         opts.add_argument("--disable-gpu")
         
@@ -165,7 +163,7 @@ class JobThaiRowScraper:
         try: self.driver = uc.Chrome(options=opts, use_subprocess=True)
         except: self.driver = uc.Chrome(options=opts, use_subprocess=True)
         
-        self.driver.set_page_load_timeout(60) # กันหน้าเว็บโหลดค้าง
+        self.driver.set_page_load_timeout(60) 
         self.wait = WebDriverWait(self.driver, 20)
         self.total_profiles_viewed = 0 
         self.all_scraped_data = []
@@ -183,7 +181,6 @@ class JobThaiRowScraper:
 
     def random_sleep(self, min_t=4.0, max_t=7.0): time.sleep(random.uniform(min_t, max_t))
 
-    # 🟢 Helper: รอโหลดหน้าเว็บให้เสร็จจริง
     def wait_for_page_load(self, timeout=10):
         try:
             WebDriverWait(self.driver, timeout).until(
@@ -191,35 +188,25 @@ class JobThaiRowScraper:
             )
         except: pass
 
-    # 🟢 Helper: ฟังก์ชันคลิกนิรภัย (Safe Click) - หัวใจของความเสถียร
     def safe_click(self, selector, by=By.XPATH, timeout=10):
         end_time = time.time() + timeout
         while time.time() < end_time:
             try:
-                # 1. รอให้มีของ
                 element = WebDriverWait(self.driver, 2).until(EC.presence_of_element_located((by, selector)))
-                # 2. เลื่อนหา
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
                 time.sleep(0.5)
-                # 3. ลองคลิกปกติ
                 element.click()
                 return True
             except ElementClickInterceptedException:
-                # 4. ถ้าโดนบัง ใช้ JS Click สวน
                 try:
                     element = self.driver.find_element(by, selector)
                     self.driver.execute_script("arguments[0].click();", element)
                     return True
                 except: pass
-            except StaleElementReferenceException:
-                # 5. ถ้าของเก่าหายไป ให้วนลูปหาใหม่
-                pass
-            except Exception:
-                pass
+            except: pass
             time.sleep(1)
         return False
 
-    # 🟢 Helper: ฟังก์ชันพิมพ์นิรภัย (Safe Type)
     def safe_type(self, selector, text, by=By.CSS_SELECTOR, timeout=10):
         try:
             element = WebDriverWait(self.driver, timeout).until(EC.element_to_be_clickable((by, selector)))
@@ -227,8 +214,6 @@ class JobThaiRowScraper:
                 element.click()
                 element.clear()
             except: pass
-            
-            # พิมพ์ทีละตัว (กันบอทจับได้) หรือยัดเลยก็ได้
             try:
                 element.send_keys(text)
             except:
@@ -249,7 +234,6 @@ class JobThaiRowScraper:
             self.driver.execute_script("window.scrollTo(0, 0);")
         except: pass
 
-    # ... (Keep parse_thai_date_exact and calculate_duration_text same as before) ...
     def parse_thai_date_exact(self, date_str):
         if not date_str: return None
         thai_months = {'มกราคม': 1, 'กุมภาพันธ์': 2, 'มีนาคม': 3, 'เมษายน': 4, 'พฤษภาคม': 5, 'มิถุนายน': 6, 'กรกฎาคม': 7, 'สิงหาคม': 8, 'กันยายน': 9, 'ตุลาคม': 10, 'พฤศจิกายน': 11, 'ธันวาคม': 12}
@@ -292,10 +276,7 @@ class JobThaiRowScraper:
         except: return ""
 
     # ==============================================================================
-    # 🔥 STEP 1 LOGIN: THE TANK EDITION (ใช้ระบบ Helper อัจฉริยะ)
-    # ==============================================================================
-    # ==============================================================================
-    # 🔥 STEP 1 LOGIN: ANTI-BLOCKER EDITION (ลบตัวบัง + กดแบบไร้เงา)
+    # 🔥 STEP 1: LOGIN (Anti-Blocker + Retry 5 Times + Cookie Fallback)
     # ==============================================================================
     def step1_login(self):
         login_url = "https://www.jobthai.com/th/employer"
@@ -305,7 +286,7 @@ class JobThaiRowScraper:
             console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries}[/]")
             
             try:
-                # 1. Reset Page & Load
+                # 1. Reset
                 if attempt > 1:
                     console.print("   🔄 Refreshing...", style="yellow")
                     try: self.driver.refresh()
@@ -318,31 +299,23 @@ class JobThaiRowScraper:
                     self.wait_for_page_load()
                     self.random_sleep(3, 5)
 
-                # 🟢 2. NUKE OVERLAYS: ลบตัวบังทุกอย่างด้วยพลัง JS (PDPA/Popup)
+                # 2. NUKE OVERLAYS (ลบตัวบัง)
                 try:
-                    self.driver.execute_script("""
-                        // ลบ Elements ที่มักจะเป็นตัวบัง
-                        var blockers = document.querySelectorAll('#close-button, .cookie-consent, [class*="pdpa"], [class*="cookie"], [class*="modal"], [class*="popup"]');
-                        blockers.forEach(b => b.remove());
-                    """)
+                    self.driver.execute_script("var blockers=document.querySelectorAll('#close-button,.cookie-consent,[class*=\"pdpa\"],[class*=\"popup\"]');blockers.forEach(b=>b.remove());")
                     console.print("   💣 ลบตัวบัง (Overlays) ทิ้งเรียบร้อย", style="dim")
                 except: pass
 
-                # 3. Navigation Actions (เปลี่ยนมาใช้ JS Force Click 100%)
+                # 3. Navigation
                 try:
-                    # กดปุ่มเมนู (Force Click)
-                    # ใช้ Selector ที่กว้างขึ้นเผื่อ ID เปลี่ยน
-                    menu_selectors = ['#menu-jobseeker-login', 'a[href*="login"]', '.icon-login']
+                    # กดเมนู Login (JS Force)
+                    menu_selectors = ['#menu-jobseeker-login', 'a[href*="login"]']
                     menu_clicked = False
-                    
                     for sel in menu_selectors:
                         try:
-                            # รอให้ DOM มีของ
                             elm = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
-                            # สั่งกดด้วย JS ทันที (ไม่สนว่าโดนบังไหม)
                             self.driver.execute_script("arguments[0].click();", elm)
                             menu_clicked = True
-                            console.print(f"   🖱️ กดปุ่มเมนูสำเร็จ (JS Force: {sel})", style="dim")
+                            console.print(f"   🖱️ กดปุ่มเมนูสำเร็จ (JS: {sel})", style="dim")
                             break
                         except: continue
                     
@@ -351,37 +324,31 @@ class JobThaiRowScraper:
 
                     self.random_sleep(2, 3)
                     
-                    # กดแท็บ Employer (Force Click)
-                    tab_selectors = ['#login_tab_employer', 'li[data-tab="employer"]', '//div[contains(text(),"บริษัท")]']
+                    # กดแท็บ Employer (JS Force)
+                    tab_selectors = ['#login_tab_employer', 'li[data-tab="employer"]']
                     tab_clicked = False
-                    
                     for sel in tab_selectors:
                         try:
-                            by_type = By.XPATH if "//" in sel else By.CSS_SELECTOR
-                            t_elm = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((by_type, sel)))
+                            t_elm = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
                             self.driver.execute_script("arguments[0].click();", t_elm)
                             tab_clicked = True
-                            console.print("   👉 กดแท็บ Employer สำเร็จ (รอโหลด...)", style="dim")
+                            console.print("   👉 กดแท็บ Employer สำเร็จ", style="dim")
                             break
                         except: continue
-                        
-                    if not tab_clicked:
-                         console.print("   ⚠️ กดแท็บ Employer ไม่ได้", style="dim")
-
-                    time.sleep(5) # รอให้แบบฟอร์มเด้งขึ้นมา
+                    
+                    if not tab_clicked: console.print("   ⚠️ กดแท็บ Employer ไม่ได้", style="dim")
+                    time.sleep(5) 
 
                 except Exception as e:
                     console.print(f"   ⚠️ Navigation Warning: {e}", style="dim")
 
-                # 4. Find Inputs (Scanner + Iframe Hunter)
+                # 4. Input Scan (Scanner + Iframe)
                 user_input_found = False
-                
-                user_sels = ["#login-form-username", "input[name='username']", "input[type='email']"]
-                pass_sels = ["#login-form-password", "input[name='password']", "input[type='password']"]
+                user_sels = ["#login-form-username", "input[name='username']"]
+                pass_sels = ["#login-form-password", "input[name='password']"]
 
                 def scan_and_fill():
                     for us in user_sels:
-                        # ใช้ timeout สั้นๆ ในการสแกนแต่ละตัว
                         if self.safe_type(us, MY_USERNAME, By.CSS_SELECTOR, timeout=3):
                             for ps in pass_sels:
                                 if self.safe_type(ps, MY_PASSWORD, By.CSS_SELECTOR, timeout=2):
@@ -391,11 +358,9 @@ class JobThaiRowScraper:
                                     return True
                     return False
 
-                # เริ่มสแกนหน้าหลัก
                 if scan_and_fill():
                     user_input_found = True
                 else:
-                    # สแกน Iframe
                     iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
                     if iframes:
                         console.print(f"   👀 สแกน {len(iframes)} Iframes...", style="dim")
@@ -412,7 +377,7 @@ class JobThaiRowScraper:
 
                 # 5. Check Success
                 if user_input_found:
-                    console.print("   📝 กรอกรหัสแล้ว รอตรวจสอบ...", style="info")
+                    console.print("   📝 กรอกแล้ว รอตรวจสอบ...", style="info")
                     for _ in range(60):
                         time.sleep(1)
                         if "auth.jobthai.com" not in self.driver.current_url and "login" not in self.driver.current_url:
@@ -427,15 +392,38 @@ class JobThaiRowScraper:
         console.print("🔄 ลอง 5 รอบไม่ไหว... ใช้แผนสุดท้าย Cookie Bypass...", style="bold yellow")
         return self.login_with_cookie()
 
+    # 🟢 Helper: ฟังก์ชัน Cookie (ที่เพิ่มเข้ามาแก้ Error)
+    def login_with_cookie(self):
+        cookies_env = os.getenv("COOKIES_JSON")
+        if not cookies_env: 
+            console.print("❌ ไม่พบ COOKIES_JSON", style="error")
+            return False
+        try:
+            self.driver.switch_to.default_content()
+            if "jobthai.com" not in self.driver.current_url:
+                self.driver.get("https://www.jobthai.com/th/employer")
+            
+            cookies_list = json.loads(cookies_env)
+            for cookie in cookies_list:
+                c = {k: v for k, v in cookie.items() if k in ['name', 'value', 'domain', 'path', 'expiry', 'secure', 'httpOnly']}
+                try: self.driver.add_cookie(c)
+                except: pass
+            self.driver.refresh(); time.sleep(5)
+            self.driver.get("https://www3.jobthai.com/findresume/findresume.php?l=th"); time.sleep(3)
+            if "login" not in self.driver.current_url:
+                console.print("🎉 Login Bypass ด้วย Cookie สำเร็จ!", style="success")
+                return True
+        except Exception as e:
+            console.print(f"❌ Cookie Error: {e}", style="error")
+        return False
+
     def step2_search(self, keyword):
         search_url = "https://www3.jobthai.com/findresume/findresume.php?l=th"
         console.print(f"2️⃣   ค้นหา: '[bold]{keyword}[/]' ...", style="info")
         
         try:
-            # 🟢 1. Reset Page (Human Style)
             reset_success = False
             try:
-                # ลองกดปุ่มเมนู
                 if self.safe_click('//*[@id="company-search-resume"]', By.XPATH, timeout=5):
                     reset_success = True
                     self.wait_for_page_load()
@@ -447,30 +435,25 @@ class JobThaiRowScraper:
                 self.wait_for_page_load()
                 self.random_sleep(3, 5)
 
-            # 🟢 2. Type Keyword (Safe Type + JS Force)
             kw_element = WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.ID, "KeyWord")))
-            self.driver.execute_script("arguments[0].value = '';", kw_element) # Clear Force
+            self.driver.execute_script("arguments[0].value = '';", kw_element)
             time.sleep(0.5)
-            self.driver.execute_script("arguments[0].value = arguments[1];", kw_element, keyword) # Type Force
+            self.driver.execute_script("arguments[0].value = arguments[1];", kw_element, keyword)
             console.print(f"   ✍️ พิมพ์ '{keyword}' เรียบร้อย", style="dim")
             time.sleep(1)
             
-            # 🟢 3. Search Click
             if not self.safe_click('buttonsearch', By.ID):
-                # สำรองถ้าคลิกปกติไม่ได้
                 search_btn = self.driver.find_element(By.ID, "buttonsearch")
                 self.driver.execute_script("arguments[0].click();", search_btn)
             
             console.print("   🔍 รอผลลัพธ์...", style="dim")
             time.sleep(5) 
 
-            # 🟢 4. Check Result
             page_src = self.driver.page_source
             if "ไม่พบข้อมูล" in page_src or "No data found" in page_src or "ไม่พบประวัติ" in page_src:
                 console.print(f"   ⚠️ ไม่พบข้อมูล (0 Results) สำหรับ: {keyword}", style="warning")
                 return True 
 
-            # Wait for Result
             try:
                 WebDriverWait(self.driver, 15).until(lambda d: "ResumeDetail" in d.page_source or "KeyWord" in d.current_url)
                 console.print(f"   ✅ เจอผลการค้นหา!", style="success")
@@ -493,7 +476,6 @@ class JobThaiRowScraper:
         while True:
             console.print(f"   📄 หน้าที่ {page_num}...", style="info")
             try:
-                # รอลิงก์โหลด
                 try: WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'ResumeDetail')]")))
                 except: pass 
                 
@@ -516,13 +498,10 @@ class JobThaiRowScraper:
             if len(collected_links) == 0: break
             if new_count == 0: break
 
-            # กดหน้าถัดไป (Safe Click)
             try:
                 next_btn_xpath = '//*[@id="content-l"]/div[2]/div[1]/table/tbody/tr/td[8]/a'
-                # เช็คว่ามีปุ่มไหม
                 next_btns = self.driver.find_elements(By.XPATH, next_btn_xpath)
                 if next_btns and next_btns[0].is_displayed():
-                    # ใช้ JS Click ชัวร์กว่า
                     self.driver.execute_script("arguments[0].click();", next_btns[0])
                     page_num += 1
                     time.sleep(3)
@@ -549,7 +528,6 @@ class JobThaiRowScraper:
 
         if not load_success: return None, 999, None
         
-        # Human Scroll
         try: self.human_scroll() 
         except: pass
         self.random_sleep(2.0, 5.0)
@@ -564,10 +542,6 @@ class JobThaiRowScraper:
                 return elem.text.strip()
             except: return ""
 
-        # ... (Extraction Logic ส่วนที่เหลือคงเดิม เพราะไม่ได้เกี่ยวกับความเสถียรของ Browser) ...
-        # [Copy ส่วน Extraction เดิมมาวางตรงนี้ได้เลยครับ เพื่อประหยัดพื้นที่]
-        # เพื่อความสมบูรณ์ ผมจะใส่ส่วนสำคัญไว้ให้ครับ
-        
         edu_tables_xpath = '//*[@id="mainTableTwoColumn"]/tbody/tr/td[1]/table/tbody/tr[7]/td[2]/table'
         try:
             edu_tables = self.driver.find_elements(By.XPATH, edu_tables_xpath)
@@ -744,7 +718,6 @@ class JobThaiRowScraper:
         printer.print(f"   🔥 เจอ: {highest_degree_text} | มหาลัย: {matched_uni} | วันที่: {days_diff} วันก่อน", style="bold green")
         return data, days_diff, person_data
     
-    # ... (ส่วน send_single_email, send_batch_email, save_to_google_sheets คงเดิม) ...
     def send_single_email(self, subject_prefix, people_list, col_header="เคยทำงานบริษัท"):
         sender = os.getenv("EMAIL_SENDER")
         password = os.getenv("EMAIL_PASSWORD")
