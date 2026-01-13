@@ -281,33 +281,26 @@ class JobThaiRowScraper:
     # ==============================================================================
     # 🔥 STEP 1: LOGIN (Nuclear JS Edition - กวาดหา Input ทุกช่อง)
     # ==============================================================================
+    # ==============================================================================
+    # 🔥 STEP 1: LOGIN (Fixed URL + Auto-Click Login Button)
+    # ==============================================================================
     def step1_login(self):
-        # ลองเข้าผ่านหน้าแรก แล้วกดปุ่มเอา (บางทีเข้า Direct URL แล้วโดนบล็อกง่ายกว่า)
-        target_url = "https://www.jobthai.com/th/employer/login"
+        # ✅ ใช้ URL หน้าหลักฝั่งบริษัท (URL .../login ไม่มีอยู่จริง)
+        target_url = "https://www.jobthai.com/th/employer"
         
-        max_retries = 5 
+        max_retries = 3 
         
         for attempt in range(1, max_retries + 1):
-            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (Nuclear JS Mode)[/]")
+            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (Correct URL Mode)[/]")
             
             try:
                 self.driver.get(target_url)
                 self.wait_for_page_load()
-                self.random_sleep(5, 8) # รอนานขึ้นหน่อยเผื่อเน็ต GitHub ช้า
+                self.random_sleep(5, 8) 
 
-                # 🔍 DEBUG: ปริ้นท์ชื่อหน้าและ URL ปัจจุบันออกมาดู
-                page_title = self.driver.title
-                curr_url = self.driver.current_url
-                console.print(f"   👀 Current Page: [bold]{page_title}[/]", style="magenta")
-                console.print(f"   🔗 URL: {curr_url}", style="dim")
-
-                if "Access Denied" in page_title or "Just a moment" in page_title:
-                    console.print("   ⛔ โดน WAF Block (Cloudflare/Firewall)!", style="bold red")
-                    # ถ้าโดนบล็อก ให้ลอง Refresh สักรอบ
-                    self.driver.refresh()
-                    time.sleep(5)
-                    continue
-
+                # 🔍 DEBUG: เช็คว่าอยู่หน้าไหน
+                console.print(f"   👀 Current Page: {self.driver.title}", style="magenta")
+                
                 # 1. ฆ่า Popup
                 try:
                     self.driver.execute_script("""
@@ -317,15 +310,32 @@ class JobThaiRowScraper:
                 except: pass
 
                 # 2. เช็คว่า Login อยู่แล้วหรือไม่
-                if "employer/dashboard" in curr_url:
+                if "employer/dashboard" in self.driver.current_url:
                      console.print("🎉 Login อยู่แล้ว!", style="bold green")
                      return True
 
-                # 3. Nuclear JS Injection: ใช้ JS วนลูปหา Input ที่น่าจะเป็น Username/Password เอง
+                # 3. พยายามเปิดกล่อง Login (ถ้ายังไม่เจอช่อง Input)
+                # บางทีหน้าเว็บย่อจอ หรือ Responsive ทำให้ช่อง Login ซ่อนอยู่ ต้องกดปุ่มก่อน
+                console.print("   🖱️ พยายามเปิดกล่อง Login...", style="dim")
+                try:
+                    # หาปุ่มที่มีคำว่า "เข้าสู่ระบบ" หรือ "Login"
+                    open_login_js = """
+                    var btns = document.querySelectorAll('a, button, li');
+                    for (var i = 0; i < btns.length; i++) {
+                        if (btns[i].innerText.includes('เข้าสู่ระบบ') || btns[i].innerText.includes('Login')) {
+                            btns[i].click();
+                            break; 
+                        }
+                    }
+                    """
+                    # ถ้าหาช่อง User ไม่เจอ ให้ลองกดปุ่ม Login ดูก่อน
+                    if not self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
+                        self.driver.execute_script(open_login_js)
+                        time.sleep(3)
+                except: pass
+
+                # 4. Nuclear JS Injection (เหมือนเดิม แต่รันบน URL ที่ถูก)
                 console.print("   💉 เริ่มกระบวนการ Nuclear Injection...", style="dim")
-                
-                # Script นี้จะคืนค่า True ถ้าเจอและกรอกสำเร็จ, False ถ้าหาไม่เจอ
-                # มันจะวนหา input ทุกตัว แล้วเช็คชื่อ attribute ว่ามีคำว่า user/email/pass หรือไม่
                 js_injector = """
                 var user = arguments[0];
                 var pass = arguments[1];
@@ -335,36 +345,29 @@ class JobThaiRowScraper:
                 var inputs = document.getElementsByTagName('input');
                 for (var i = 0; i < inputs.length; i++) {
                     var el = inputs[i];
-                    var name = (el.getAttribute('name') || '').toLowerCase();
                     var type = (el.getAttribute('type') || '').toLowerCase();
-                    var fcn = (el.getAttribute('formcontrolname') || '').toLowerCase();
-                    var id = (el.getAttribute('id') || '').toLowerCase();
+                    var name = (el.getAttribute('name') || '').toLowerCase();
                     
-                    // หาช่อง Username
+                    // หาช่อง Username (ดักทุกทาง)
                     if (!foundUser && (type === 'text' || type === 'email') && 
-                       (name.includes('user') || name.includes('email') || fcn.includes('user') || id.includes('user'))) {
+                       (name.includes('user') || name.includes('email') || name.includes('login'))) {
                         el.value = user;
                         el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
                         foundUser = true;
-                        continue;
                     }
                     
                     // หาช่อง Password
-                    if (!foundPass && (type === 'password') || 
-                       (name.includes('pass') || fcn.includes('pass') || id.includes('pass'))) {
+                    if (!foundPass && type === 'password') {
                         el.value = pass;
                         el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
                         foundPass = true;
                     }
                 }
                 
-                // ลองกดปุ่ม Login ด้วย
                 if (foundUser && foundPass) {
                     var btns = document.getElementsByTagName('button');
                     for (var j = 0; j < btns.length; j++) {
-                        if (btns[j].type === 'submit' || btns[j].innerText.includes('เข้าสู่ระบบ') || btns[j].innerText.includes('Login')) {
+                        if (btns[j].type === 'submit' || btns[j].innerText.includes('เข้าสู่ระบบ')) {
                             btns[j].click();
                             return 'CLICKED';
                         }
@@ -377,10 +380,10 @@ class JobThaiRowScraper:
                 result = self.driver.execute_script(js_injector, MY_USERNAME, MY_PASSWORD)
                 
                 if result == 'NOT_FOUND':
-                    console.print("   ⚠️ JS หาช่องกรอกไม่เจอ (อาจไม่มี Form บนหน้านี้)", style="yellow")
-                    # Save html source มาดูว่าโหลดหน้าอะไรมา
-                    with open("debug_page_source.html", "w", encoding="utf-8") as f:
-                        f.write(self.driver.page_source)
+                    console.print("   ⚠️ ยังหาช่องไม่เจอ (หน้าเว็บอาจโหลดไม่ครบ)", style="yellow")
+                    if attempt == max_retries:
+                        # Save Screenshot หน้าสุดท้ายมาดู
+                        self.driver.save_screenshot("final_error_page.png")
                     raise Exception("Input Not Found")
                 
                 elif result == 'FILLED_NO_CLICK':
@@ -388,7 +391,7 @@ class JobThaiRowScraper:
                     ActionChains(self.driver).send_keys(Keys.ENTER).perform()
                 
                 else:
-                    console.print("   ✅ กรอกและกดปุ่มสำเร็จ (JS Mode)", style="success")
+                    console.print("   ✅ กรอกและกดปุ่มสำเร็จ", style="success")
 
                 # 5. รอ Redirect
                 console.print("   ⏳ รอตรวจสอบสิทธิ์...", style="info")
@@ -403,7 +406,6 @@ class JobThaiRowScraper:
 
             except Exception as e:
                 console.print(f"   ⚠️ Error รอบที่ {attempt}: {e}", style="warning")
-                self.driver.save_screenshot(f"login_fail_{attempt}.png")
         
         console.print("🔄 ใช้แผนสำรอง Cookie Bypass...", style="bold yellow")
         return self.login_with_cookie()
