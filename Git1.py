@@ -285,7 +285,7 @@ class JobThaiRowScraper:
         # ลองเข้าผ่านหน้าแรก แล้วกดปุ่มเอา (บางทีเข้า Direct URL แล้วโดนบล็อกง่ายกว่า)
         target_url = "https://www.jobthai.com/th/employer/login"
         
-        max_retries = 3 
+        max_retries = 5 
         
         for attempt in range(1, max_retries + 1):
             console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (Nuclear JS Mode)[/]")
