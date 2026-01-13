@@ -144,8 +144,8 @@ class JobThaiRowScraper:
                 with open(self.history_file, 'r', encoding='utf-8') as f: self.history_data = json.load(f)
             except: self.history_data = {}
 
-        # --- Driver Configuration for GitHub Actions ---
-        opts = uc.ChromeOptions() # ✅ ประกาศครั้งเดียวพอ
+        # --- Driver Configuration ---
+        opts = uc.ChromeOptions()
         
         opts.add_argument('--window-size=1920,1080')
         opts.add_argument("--no-sandbox") 
@@ -154,10 +154,8 @@ class JobThaiRowScraper:
         opts.add_argument("--disable-gpu") 
         opts.add_argument("--lang=th-TH")
         
-        # ✅ ใส่ User Agent ที่ตรงกับเครื่องคุณ (Chrome 143 ยังไม่ออกนะครับ ปัจจุบันประมาณ 120-122 แก้เลขหน่อยก็ดีครับเผื่อเขาเช็ค)
-        # ตัวอย่าง User Agent ที่ดูปกติ
+        # ✅ ใช้ Static User Agent (ไม่ต้องสุ่มแล้ว เพื่อให้ Cookie ไม่หลุด)
         my_static_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-        
         opts.add_argument(f'--user-agent={my_static_ua}')
 
         try:
@@ -170,6 +168,9 @@ class JobThaiRowScraper:
         self.wait = WebDriverWait(self.driver, 20)
         self.total_profiles_viewed = 0 
         self.all_scraped_data = []
+        
+        # กำหนดค่า self.ua เป็น None กันเหนียวไว้ก่อน (แม้จะไม่ใช้แล้วก็ตาม)
+        self.ua = None 
 
     def save_history(self):
         if not EMAIL_USE_HISTORY: return
@@ -177,10 +178,9 @@ class JobThaiRowScraper:
             with open(self.history_file, 'w', encoding='utf-8') as f: json.dump(self.history_data, f, ensure_ascii=False, indent=4)
         except: pass
 
+    # 🔴 จุดที่แก้: เปลี่ยนให้ฟังก์ชันนี้ไม่ทำอะไรเลย (pass) เพราะเราใช้ User Agent แบบ Fixed แล้ว
     def set_random_user_agent(self):
-        if self.ua:
-            try: self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": self.ua.random})
-            except: pass
+        pass 
 
     def random_sleep(self, min_t=4.0, max_t=7.0): time.sleep(random.uniform(min_t, max_t))
 
