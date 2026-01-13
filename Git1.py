@@ -286,10 +286,9 @@ class JobThaiRowScraper:
         except: return ""
 
     # ==============================================================================
-    # 🔥 STEP 1: LOGIN (ปรับปรุง Logic ให้เข้า URL ตรงๆ)
+    # 🔥 STEP 1: LOGIN (JavaScript Injection Edition - เสถียรสุด)
     # ==============================================================================
     def step1_login(self):
-        # เข้า URL หน้า Login โดยตรง เพื่อลดความเสี่ยงในการกด Tab พลาด
         login_url = "https://www.jobthai.com/th/employer/login"
         max_retries = 3 
         
@@ -301,44 +300,79 @@ class JobThaiRowScraper:
                 self.wait_for_page_load()
                 self.random_sleep(3, 5)
 
-                # 1. Clear Popup / Cookie Banner
+                # 1. ฆ่า Popup ทุกชนิดทิ้งก่อน (Aggressive Mode)
                 try:
-                    self.driver.execute_script("var blockers=document.querySelectorAll('#close-button,.cookie-consent,[class*=\"pdpa\"],[class*=\"popup\"],.modal');blockers.forEach(b=>b.remove());")
+                    self.driver.execute_script("""
+                        var blockers = document.querySelectorAll('#close-button, .cookie-consent, [class*="pdpa"], [class*="popup"], .modal, iframe');
+                        blockers.forEach(b => b.remove());
+                    """)
+                    console.print("   🧹 เคลียร์ Popup เรียบร้อย", style="dim")
                 except: pass
 
-                # 2. Check if already logged in (Redirected to dashboard)
+                # 2. เช็คว่า Login อยู่แล้วหรือไม่
                 if "employer/dashboard" in self.driver.current_url:
                      console.print("🎉 Login อยู่แล้ว!", style="bold green")
                      return True
 
-                # 3. Input Data (ใช้ JS ผสม SendKeys เพื่อความชัวร์)
-                console.print("   ✍️ กำลังกรอกข้อมูล...", style="dim")
+                # 3. เทคนิค JS Injection: ยัด Username/Pass เข้าไปตรงๆ ไม่ต้องคลิก
+                console.print("   💉 กำลัง Inject ข้อมูลเข้าระบบ...", style="dim")
                 
-                # Username
-                user_box = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[formcontrolname='username'], input[type='text']")))
-                user_box.click()
-                user_box.clear()
-                user_box.send_keys(MY_USERNAME)
+                # รายชื่อ Selector ที่เป็นไปได้ทั้งหมด (กันเหนียว)
+                user_selectors = [
+                    "input[formcontrolname='username']", 
+                    "input[name='username']", 
+                    "#login-form-username", 
+                    "input[type='email']",
+                    "input[placeholder*='sername']"
+                ]
                 
+                pass_selectors = [
+                    "input[formcontrolname='password']", 
+                    "input[name='password']", 
+                    "#login-form-password", 
+                    "input[type='password']",
+                    "input[placeholder*='assword']"
+                ]
+
+                def inject_value(selectors, value):
+                    for sel in selectors:
+                        try:
+                            # หา Element
+                            elm = self.driver.find_element(By.CSS_SELECTOR, sel)
+                            # ยัดค่า และสั่ง Trigger Event (สำคัญมากเพื่อให้เว็บรู้ว่ามีการพิมพ์)
+                            self.driver.execute_script("""
+                                arguments[0].value = arguments[1];
+                                arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                                arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                                arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));
+                            """, elm, value)
+                            return True
+                        except: continue
+                    return False
+
+                # เริ่ม Inject
+                if not inject_value(user_selectors, MY_USERNAME):
+                    raise Exception("หาช่อง Username ไม่เจอ")
+                
+                self.random_sleep(0.5, 1)
+                
+                if not inject_value(pass_selectors, MY_PASSWORD):
+                    raise Exception("หาช่อง Password ไม่เจอ")
+
+                console.print("   ✅ กรอกข้อมูลสำเร็จ (JS Mode)", style="success")
                 self.random_sleep(1, 2)
 
-                # Password
-                pass_box = self.driver.find_element(By.CSS_SELECTOR, "input[formcontrolname='password'], input[type='password']")
-                pass_box.click()
-                pass_box.clear()
-                pass_box.send_keys(MY_PASSWORD)
-                
-                self.random_sleep(1, 2)
-
-                # 4. Click Login Button
+                # 4. กดปุ่ม Login (ใช้ JS กดเช่นกัน)
                 try:
-                    btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit'], #login-btn")
-                    # ใช้ JS Click จะชัวร์กว่า ActionChains ในกรณีปุ่มหลุดจอ
+                    btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit'], #login-btn, .btn-login")
                     self.driver.execute_script("arguments[0].click();", btn)
                 except:
-                    pass_box.send_keys(Keys.ENTER)
+                    # ถ้าหาปุ่มไม่เจอ ให้ลอง Enter ที่ช่อง Password แทน
+                    try:
+                        self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").send_keys(Keys.ENTER)
+                    except: pass
 
-                # 5. Wait for Redirect
+                # 5. รอ Redirect
                 console.print("   ⏳ รอตรวจสอบสิทธิ์...", style="info")
                 try:
                     WebDriverWait(self.driver, 20).until(
@@ -347,15 +381,15 @@ class JobThaiRowScraper:
                     console.print(f"🎉 Login สำเร็จ! (รอบที่ {attempt})", style="bold green")
                     return True
                 except TimeoutException:
-                    # ถ้า Time out ลองเช็คว่ามี Error msg ขึ้นไหม
+                    # เช็ค Error บนหน้าเว็บ
                     try:
-                        err = self.driver.find_element(By.CSS_SELECTOR, ".error-message, .alert-danger").text
+                        err = self.driver.find_element(By.CSS_SELECTOR, ".error-message, .alert-danger, .text-danger").text
                         console.print(f"   ❌ Login Error Message: {err}", style="bold red")
                     except: pass
 
             except Exception as e:
                 console.print(f"   ⚠️ Error รอบที่ {attempt}: {e}", style="warning")
-                self.driver.save_screenshot(f"login_fail_{attempt}.png") # บันทึกภาพไว้ดูใน Artifacts
+                self.driver.save_screenshot(f"login_fail_{attempt}.png")
         
         console.print("🔄 ใช้แผนสำรอง Cookie Bypass...", style="bold yellow")
         return self.login_with_cookie()
