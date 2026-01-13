@@ -145,38 +145,25 @@ class JobThaiRowScraper:
             except: self.history_data = {}
 
         # --- Driver Configuration for GitHub Actions ---
-        opts = uc.ChromeOptions()
+        opts = uc.ChromeOptions() # ✅ ประกาศครั้งเดียวพอ
         
-        # ห้ามใช้ --headless กับ uc บน GitHub Actions (เราจะใช้ Xvfb แทน)
-        # opts.add_argument('--headless=new') 
-
         opts.add_argument('--window-size=1920,1080')
-        opts.add_argument("--no-sandbox") # จำเป็นมากสำหรับ Docker/Linux environment
-        opts.add_argument("--disable-dev-shm-usage") # แก้ปัญหา mem crash
+        opts.add_argument("--no-sandbox") 
+        opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-popup-blocking")
         opts.add_argument("--disable-gpu") 
         opts.add_argument("--lang=th-TH")
         
-        # ใน def __init__(self):
-        opts = uc.ChromeOptions()
-    
-    # ❌ ลบอันเดิมทิ้ง (fake_useragent)
-    # try:
-    #     from fake_useragent import UserAgent
-    #     ua = UserAgent(...)
-    # except: ...
-    
-    # ✅ ใช้อันนี้แทน (เอาค่าจากเครื่องคุณมาใส่)
-        my_static_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
-    
+        # ✅ ใส่ User Agent ที่ตรงกับเครื่องคุณ (Chrome 143 ยังไม่ออกนะครับ ปัจจุบันประมาณ 120-122 แก้เลขหน่อยก็ดีครับเผื่อเขาเช็ค)
+        # ตัวอย่าง User Agent ที่ดูปกติ
+        my_static_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        
         opts.add_argument(f'--user-agent={my_static_ua}')
 
         try:
-            # version_main=None จะช่วยให้ uc หา version chrome ในเครื่องอัตโนมัติ
             self.driver = uc.Chrome(options=opts, version_main=None) 
         except Exception as e:
             console.print(f"⚠️ Driver Init Fail (Retry): {e}", style="yellow")
-            # Fallback for some environments
             self.driver = uc.Chrome(options=opts)
         
         self.driver.set_page_load_timeout(60) 
