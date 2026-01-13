@@ -157,13 +157,19 @@ class JobThaiRowScraper:
         opts.add_argument("--disable-gpu") 
         opts.add_argument("--lang=th-TH")
         
-        # Random User Agent เพื่อลดโอกาสโดนจับ
-        try:
-            from fake_useragent import UserAgent
-            ua = UserAgent(browsers=['chrome'], os=['windows'])
-            opts.add_argument(f'--user-agent={ua.random}')
-        except:
-            pass
+        # ใน def __init__(self):
+        opts = uc.ChromeOptions()
+    
+    # ❌ ลบอันเดิมทิ้ง (fake_useragent)
+    # try:
+    #     from fake_useragent import UserAgent
+    #     ua = UserAgent(...)
+    # except: ...
+    
+    # ✅ ใช้อันนี้แทน (เอาค่าจากเครื่องคุณมาใส่)
+        my_static_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+    
+        opts.add_argument(f'--user-agent={my_static_ua}')
 
         try:
             # version_main=None จะช่วยให้ uc หา version chrome ในเครื่องอัตโนมัติ
@@ -399,23 +405,61 @@ class JobThaiRowScraper:
         if not cookies_env: 
             console.print("❌ ไม่พบ COOKIES_JSON", style="error")
             return False
-        try:
-            self.driver.switch_to.default_content()
-            if "jobthai.com" not in self.driver.current_url:
-                self.driver.get("https://www.jobthai.com/th/employer")
             
+        try:
+            console.print("🍪 กำลังโหลด Cookie...", style="info")
+            
+            # 1. เข้าหน้าเว็บเปล่าๆ ของ Domain นั้นก่อน (สำคัญมาก เพื่อให้ Domain scope ตรงกัน)
+            self.driver.get("https://www.jobthai.com/th/employer")
+            self.random_sleep(2, 3)
+            
+            # 2. ลบ Cookie เดิมที่ติดมากับ Session ใหม่ทิ้งให้หมด
+            self.driver.delete_all_cookies()
+            
+            # 3. แปลงและยัด Cookie
             cookies_list = json.loads(cookies_env)
             for cookie in cookies_list:
-                c = {k: v for k, v in cookie.items() if k in ['name', 'value', 'domain', 'path', 'expiry', 'secure', 'httpOnly']}
-                try: self.driver.add_cookie(c)
-                except: pass
-            self.driver.refresh(); time.sleep(5)
-            self.driver.get("https://www3.jobthai.com/findresume/findresume.php?l=th"); time.sleep(3)
-            if "login" not in self.driver.current_url:
-                console.print("🎉 Login Bypass ด้วย Cookie สำเร็จ!", style="success")
+                # คัดเฉพาะ Key ที่ Selenium รองรับ (ถ้าเอา key แปลกๆ ไปด้วย จะ Error)
+                cookie_dict = {
+                    'name': cookie.get('name'),
+                    'value': cookie.get('value'),
+                    'domain': cookie.get('domain'), # สำคัญ: ต้องตรงกับเว็บที่เปิด
+                    'path': cookie.get('path', '/'),
+                    # 'secure': cookie.get('secure', False), # บางทีใส่ Secure แล้วพัง ถ้าเว็บไม่ strict ให้ comment ออก
+                    # 'expiry': cookie.get('expirationDate') # ไม่ต้องใส่ expiry ก็ได้ ถ้าอยากให้เป็น Session Cookie
+                }
+                
+                # Fix Domain: บางที Cookie มาเป็น .jobthai.com แต่เราเข้า www.jobthai.com
+                # ให้ตัดจุดข้างหน้าออกเพื่อความชัวร์
+                if 'jobthai' in str(cookie_dict['domain']):
+                    try:
+                        self.driver.add_cookie(cookie_dict)
+                    except Exception as e:
+                        # ถ้า add ไม่เข้า ข้ามไป (บางอันเป็น 3rd party cookie)
+                        pass
+            
+            console.print("   ✅ ยัด Cookie เสร็จแล้ว -> Refresh หน้าจอ", style="dim")
+            
+            # 4. Refresh เพื่อให้ Cookie ทำงาน
+            self.driver.refresh()
+            self.wait_for_page_load()
+            self.random_sleep(3, 5)
+
+            # 5. เช็คว่าเข้าได้จริงไหม
+            if "login" not in self.driver.current_url and "dashboard" in self.driver.current_url:
+                console.print("🎉 Bypass Login สำเร็จด้วย Cookie!", style="success")
                 return True
+            else:
+                # ลองไปหน้า Resume โดยตรงอีกทีเพื่อความชัวร์
+                self.driver.get("https://www3.jobthai.com/findresume/findresume.php?l=th")
+                self.random_sleep(2, 3)
+                if "login" not in self.driver.current_url:
+                     console.print("🎉 Bypass Login สำเร็จ! (Check Step 2)", style="success")
+                     return True
+
         except Exception as e:
             console.print(f"❌ Cookie Error: {e}", style="error")
+        
         return False
 
     def step2_search(self, keyword):
