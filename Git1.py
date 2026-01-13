@@ -281,12 +281,15 @@ class JobThaiRowScraper:
     # ==============================================================================
     # 🔥 STEP 1: LOGIN (Brute Force Open Modal Edition)
     # ==============================================================================
+    # ==============================================================================
+    # 🔥 STEP 1: LOGIN (Full Auto - Open, Fill, and JS Click Submit)
+    # ==============================================================================
     def step1_login(self):
         target_url = "https://www.jobthai.com/th/employer"
         max_retries = 3 
         
         for attempt in range(1, max_retries + 1):
-            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (Brute Force)[/]")
+            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (Click Submit Mode)[/]")
             
             try:
                 self.driver.get(target_url)
@@ -295,7 +298,7 @@ class JobThaiRowScraper:
 
                 console.print(f"   👀 Current Page: {self.driver.title}", style="magenta")
                 
-                # 1. ฆ่า Popup ก่อน (สำคัญมาก)
+                # 1. ฆ่า Popup
                 try:
                     self.driver.execute_script("""
                         var blockers = document.querySelectorAll('#close-button, .cookie-consent, [class*="pdpa"], [class*="popup"], .modal-backdrop, iframe');
@@ -308,113 +311,111 @@ class JobThaiRowScraper:
                      console.print("🎉 Login อยู่แล้ว!", style="bold green")
                      return True
 
-                # 3. 🔥 ปฏิบัติการงัดแงะ: หาปุ่ม Login ให้เจอแล้วกดให้ยับ
-                # เช็คก่อนว่ามีช่องให้กรอกไหม ถ้าไม่มี ต้องหาปุ่มกด
+                # 3. เปิด Modal (ใช้ Logic เดิมที่ Work แล้ว)
                 if not self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
                     console.print("   🖱️ ไม่เจอช่องกรอก -> เริ่มปฏิบัติการหาปุ่ม Login...", style="bold yellow")
-                    
-                    # รายชื่อ XPath ของปุ่ม Login ที่เป็นไปได้ทั้งหมด
                     possible_buttons = [
-                        "//a[contains(text(), 'เข้าสู่ระบบ')]",
-                        "//div[contains(text(), 'เข้าสู่ระบบ')]",
-                        "//span[contains(text(), 'เข้าสู่ระบบ')]",
-                        "//button[contains(text(), 'Login')]",
-                        "//a[contains(@href, 'login')]"
+                        "//a[contains(text(), 'เข้าสู่ระบบ')]", "//div[contains(text(), 'เข้าสู่ระบบ')]",
+                        "//span[contains(text(), 'เข้าสู่ระบบ')]", "//button[contains(text(), 'Login')]"
                     ]
-                    
                     clicked = False
                     for xpath in possible_buttons:
                         try:
-                            # หาปุ่มที่มองเห็นได้ (Visible)
                             btns = self.driver.find_elements(By.XPATH, xpath)
                             for btn in btns:
                                 if btn.is_displayed():
-                                    # เจอแล้วกดเลย!
                                     console.print(f"      👉 เจอปุ่ม! ({xpath}) -> Click!", style="cyan")
-                                    # ลองกดแบบปกติ
-                                    try: btn.click()
-                                    except: 
-                                        # ถ้ากดไม่ได้ ลองใช้ JS กด
-                                        self.driver.execute_script("arguments[0].click();", btn)
-                                    
+                                    self.driver.execute_script("arguments[0].click();", btn)
                                     time.sleep(2)
-                                    # เช็คว่าช่องโผล่มาหรือยัง
                                     if self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
                                         clicked = True
                                         break
                             if clicked: break
                         except: pass
-                    
-                    if not clicked:
-                        console.print("   ⚠️ หาปุ่มไม่เจอ/กดไม่ติด -> จะลอง Inject เผื่อฟลุ๊ค", style="dim")
 
-                # 4. Nuclear JS Injection (เหมือนเดิม)
-                console.print("   💉 เริ่มอัดข้อมูล (Injection)...", style="dim")
+                # 4. Nuclear JS Injection + Click Submit (เพิ่มส่วนคลิกปุ่ม)
+                console.print("   💉 เริ่มอัดข้อมูลและกดปุ่ม (Injection)...", style="dim")
                 js_injector = """
                 var user = arguments[0];
                 var pass = arguments[1];
                 var foundUser = false;
                 var foundPass = false;
                 
+                // 1. กรอกข้อมูล
                 var inputs = document.getElementsByTagName('input');
                 for (var i = 0; i < inputs.length; i++) {
                     var el = inputs[i];
                     var type = (el.getAttribute('type') || '').toLowerCase();
                     var name = (el.getAttribute('name') || '').toLowerCase();
-                    var id = (el.getAttribute('id') || '').toLowerCase();
                     
-                    // Username Logic
                     if (!foundUser && (type === 'text' || type === 'email') && 
-                       (name.includes('user') || name.includes('email') || name.includes('login') || id.includes('user'))) {
+                       (name.includes('user') || name.includes('email') || name.includes('login'))) {
                         el.value = user;
                         el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
                         foundUser = true;
                     }
                     
-                    // Password Logic
                     if (!foundPass && type === 'password') {
                         el.value = pass;
                         el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
                         foundPass = true;
                     }
                 }
                 
-                if (foundUser && foundPass) return 'FILLED';
+                // 2. ถ้ากรอกครบ ให้หาปุ่มกดเลย!
+                if (foundUser && foundPass) {
+                    var buttons = document.getElementsByTagName('button');
+                    for (var j = 0; j < buttons.length; j++) {
+                        var btn = buttons[j];
+                        var txt = (btn.innerText || '').toLowerCase();
+                        var type = (btn.getAttribute('type') || '').toLowerCase();
+                        
+                        // เงื่อนไขหาปุ่ม Submit
+                        if (type === 'submit' || txt.includes('เข้าสู่ระบบ') || txt.includes('login')) {
+                            // เช็คว่าเป็นปุ่มใน Modal (ไม่ใช่ปุ่ม Login บน Header)
+                            // โดยดูว่าปุ่มนี้มองเห็นอยู่ (offsetParent ไม่เป็น null)
+                            if (btn.offsetParent !== null) {
+                                btn.click();
+                                return 'CLICKED_SUBMIT';
+                            }
+                        }
+                    }
+                    return 'FILLED_BUT_NO_BUTTON';
+                }
                 return 'NOT_FOUND';
                 """
                 
                 result = self.driver.execute_script(js_injector, MY_USERNAME, MY_PASSWORD)
                 
-                if result == 'NOT_FOUND':
-                    console.print("   ❌ ยังหาช่องไม่เจอ (ยอมแพ้รอบนี้)", style="red")
-                    # ถ้าเป็นรอบสุดท้าย ให้ Save รูปมาดูหน่อยว่าหน้าตาเป็นยังไง ทำไมหาปุ่มไม่เจอ
-                    if attempt == max_retries:
-                        self.driver.save_screenshot("debug_no_input.png")
-                    # Refresh แล้วลองใหม่
+                if result == 'CLICKED_SUBMIT':
+                    console.print("   ✅ กรอกและ JS กดปุ่ม Submit สำเร็จ!", style="success")
+                elif result == 'FILLED_BUT_NO_BUTTON':
+                    console.print("   ⚠️ กรอกแล้วแต่หาปุ่มไม่เจอ -> ลองกด Enter สำรอง", style="yellow")
+                    ActionChains(self.driver).send_keys(Keys.ENTER).perform()
+                elif result == 'NOT_FOUND':
+                    console.print("   ❌ ยังหาช่องไม่เจอ (Modal อาจยังไม่เปิด)", style="red")
                     self.driver.refresh()
-                    continue 
-                
-                else:
-                    console.print("   ✅ กรอกสำเร็จ -> กด ENTER", style="success")
-                    try:
-                        ActionChains(self.driver).send_keys(Keys.ENTER).perform()
-                        time.sleep(1)
-                        # ย้ำอีกทีที่ช่อง Password
-                        try:
-                            self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").send_keys(Keys.ENTER)
-                        except: pass
-                    except: pass
+                    continue
 
                 # 5. รอ Redirect
                 console.print("   ⏳ รอตรวจสอบสิทธิ์...", style="info")
                 try:
-                    WebDriverWait(self.driver, 20).until(
-                        lambda d: "auth.jobthai.com" not in d.current_url and "login" not in d.current_url
+                    # รอ URL เปลี่ยน หรือ Dashboard โผล่มา
+                    WebDriverWait(self.driver, 25).until(
+                        lambda d: "employer/dashboard" in d.current_url or 
+                                  ("auth.jobthai.com" not in d.current_url and "login" not in d.current_url and len(d.current_url) > 20)
                     )
                     console.print(f"🎉 Login สำเร็จ! (รอบที่ {attempt})", style="bold green")
                     return True
                 except TimeoutException:
-                    console.print(f"   ❌ Login Error (Timeout)", style="bold red")
+                    console.print(f"   ❌ Login Error (Timeout) - หน้าเว็บไม่เปลี่ยน", style="bold red")
+                    # เช็ค Error Message บนหน้าเว็บ
+                    try:
+                        err = self.driver.find_element(By.CSS_SELECTOR, ".text-danger, .error-message").text
+                        console.print(f"      📌 ข้อความแจ้งเตือน: {err}", style="bold red")
+                    except: pass
                     self.driver.save_screenshot(f"login_timeout_{attempt}.png")
 
             except Exception as e:
