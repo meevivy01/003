@@ -279,92 +279,116 @@ class JobThaiRowScraper:
         except: return ""
 
     # ==============================================================================
-    # 🔥 STEP 1: LOGIN (Xvfb Supported - กดปุ่มได้ชัวร์กว่า)
-    # ==============================================================================
-    # ==============================================================================
-    # 🔥 STEP 1: LOGIN (JavaScript Injection Edition - เสถียรที่สุดสำหรับ GitHub)
+    # 🔥 STEP 1: LOGIN (Nuclear JS Edition - กวาดหา Input ทุกช่อง)
     # ==============================================================================
     def step1_login(self):
-        login_url = "https://www.jobthai.com/th/employer/login"
+        # ลองเข้าผ่านหน้าแรก แล้วกดปุ่มเอา (บางทีเข้า Direct URL แล้วโดนบล็อกง่ายกว่า)
+        target_url = "https://www.jobthai.com/th/employer/login"
+        
         max_retries = 3 
         
         for attempt in range(1, max_retries + 1):
-            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (JS Mode)[/]")
+            console.rule(f"[bold cyan]🔐 Login Attempt {attempt}/{max_retries} (Nuclear JS Mode)[/]")
             
             try:
-                self.driver.get(login_url)
+                self.driver.get(target_url)
                 self.wait_for_page_load()
-                self.random_sleep(3, 5)
+                self.random_sleep(5, 8) # รอนานขึ้นหน่อยเผื่อเน็ต GitHub ช้า
 
-                # 1. ฆ่า Popup ทุกชนิดทิ้งก่อน (Aggressive Mode)
+                # 🔍 DEBUG: ปริ้นท์ชื่อหน้าและ URL ปัจจุบันออกมาดู
+                page_title = self.driver.title
+                curr_url = self.driver.current_url
+                console.print(f"   👀 Current Page: [bold]{page_title}[/]", style="magenta")
+                console.print(f"   🔗 URL: {curr_url}", style="dim")
+
+                if "Access Denied" in page_title or "Just a moment" in page_title:
+                    console.print("   ⛔ โดน WAF Block (Cloudflare/Firewall)!", style="bold red")
+                    # ถ้าโดนบล็อก ให้ลอง Refresh สักรอบ
+                    self.driver.refresh()
+                    time.sleep(5)
+                    continue
+
+                # 1. ฆ่า Popup
                 try:
                     self.driver.execute_script("""
                         var blockers = document.querySelectorAll('#close-button, .cookie-consent, [class*="pdpa"], [class*="popup"], .modal, iframe');
                         blockers.forEach(b => b.remove());
                     """)
-                    console.print("   🧹 เคลียร์ Popup เรียบร้อย", style="dim")
                 except: pass
 
                 # 2. เช็คว่า Login อยู่แล้วหรือไม่
-                if "employer/dashboard" in self.driver.current_url:
+                if "employer/dashboard" in curr_url:
                      console.print("🎉 Login อยู่แล้ว!", style="bold green")
                      return True
 
-                # 3. เทคนิค JS Injection: ยัด Username/Pass เข้าไปตรงๆ ไม่ต้องคลิก
-                console.print("   💉 กำลัง Inject ข้อมูลเข้าระบบ...", style="dim")
+                # 3. Nuclear JS Injection: ใช้ JS วนลูปหา Input ที่น่าจะเป็น Username/Password เอง
+                console.print("   💉 เริ่มกระบวนการ Nuclear Injection...", style="dim")
                 
-                # รายชื่อ Selector ที่เป็นไปได้ทั้งหมด (กันเหนียว)
-                user_selectors = [
-                    "input[formcontrolname='username']", 
-                    "input[name='username']", 
-                    "#login-form-username", 
-                    "input[type='email']"
-                ]
+                # Script นี้จะคืนค่า True ถ้าเจอและกรอกสำเร็จ, False ถ้าหาไม่เจอ
+                # มันจะวนหา input ทุกตัว แล้วเช็คชื่อ attribute ว่ามีคำว่า user/email/pass หรือไม่
+                js_injector = """
+                var user = arguments[0];
+                var pass = arguments[1];
+                var foundUser = false;
+                var foundPass = false;
                 
-                pass_selectors = [
-                    "input[formcontrolname='password']", 
-                    "input[name='password']", 
-                    "#login-form-password", 
-                    "input[type='password']"
-                ]
-
-                def inject_value(selectors, value):
-                    for sel in selectors:
-                        try:
-                            # หา Element
-                            elm = self.driver.find_element(By.CSS_SELECTOR, sel)
-                            # ยัดค่า และสั่ง Trigger Event (สำคัญมากเพื่อให้เว็บรู้ว่ามีการพิมพ์)
-                            self.driver.execute_script("""
-                                arguments[0].value = arguments[1];
-                                arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-                                arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-                                arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));
-                            """, elm, value)
-                            return True
-                        except: continue
-                    return False
-
-                # เริ่ม Inject
-                if not inject_value(user_selectors, MY_USERNAME):
-                    raise Exception("หาช่อง Username ไม่เจอ")
+                var inputs = document.getElementsByTagName('input');
+                for (var i = 0; i < inputs.length; i++) {
+                    var el = inputs[i];
+                    var name = (el.getAttribute('name') || '').toLowerCase();
+                    var type = (el.getAttribute('type') || '').toLowerCase();
+                    var fcn = (el.getAttribute('formcontrolname') || '').toLowerCase();
+                    var id = (el.getAttribute('id') || '').toLowerCase();
+                    
+                    // หาช่อง Username
+                    if (!foundUser && (type === 'text' || type === 'email') && 
+                       (name.includes('user') || name.includes('email') || fcn.includes('user') || id.includes('user'))) {
+                        el.value = user;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        foundUser = true;
+                        continue;
+                    }
+                    
+                    // หาช่อง Password
+                    if (!foundPass && (type === 'password') || 
+                       (name.includes('pass') || fcn.includes('pass') || id.includes('pass'))) {
+                        el.value = pass;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        foundPass = true;
+                    }
+                }
                 
-                self.random_sleep(0.5, 1)
+                // ลองกดปุ่ม Login ด้วย
+                if (foundUser && foundPass) {
+                    var btns = document.getElementsByTagName('button');
+                    for (var j = 0; j < btns.length; j++) {
+                        if (btns[j].type === 'submit' || btns[j].innerText.includes('เข้าสู่ระบบ') || btns[j].innerText.includes('Login')) {
+                            btns[j].click();
+                            return 'CLICKED';
+                        }
+                    }
+                    return 'FILLED_NO_CLICK';
+                }
+                return 'NOT_FOUND';
+                """
                 
-                if not inject_value(pass_selectors, MY_PASSWORD):
-                    raise Exception("หาช่อง Password ไม่เจอ")
-
-                console.print("   ✅ กรอกข้อมูลสำเร็จ (JS Mode)", style="success")
-                self.random_sleep(1, 2)
-
-                # 4. กดปุ่ม Login (ใช้ JS กดเช่นกัน)
-                try:
-                    btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit'], #login-btn, .btn-login")
-                    self.driver.execute_script("arguments[0].click();", btn)
-                except:
-                    # ถ้าหาปุ่มไม่เจอ ให้ลอง Enter ที่ช่อง Password แทน
-                    try:
-                        self.driver.find_element(By.CSS_SELECTOR, "input[type='password']").send_keys(Keys.ENTER)
-                    except: pass
+                result = self.driver.execute_script(js_injector, MY_USERNAME, MY_PASSWORD)
+                
+                if result == 'NOT_FOUND':
+                    console.print("   ⚠️ JS หาช่องกรอกไม่เจอ (อาจไม่มี Form บนหน้านี้)", style="yellow")
+                    # Save html source มาดูว่าโหลดหน้าอะไรมา
+                    with open("debug_page_source.html", "w", encoding="utf-8") as f:
+                        f.write(self.driver.page_source)
+                    raise Exception("Input Not Found")
+                
+                elif result == 'FILLED_NO_CLICK':
+                    console.print("   ✅ กรอกแล้ว แต่หาปุ่มไม่เจอ -> ลองกด Enter", style="info")
+                    ActionChains(self.driver).send_keys(Keys.ENTER).perform()
+                
+                else:
+                    console.print("   ✅ กรอกและกดปุ่มสำเร็จ (JS Mode)", style="success")
 
                 # 5. รอ Redirect
                 console.print("   ⏳ รอตรวจสอบสิทธิ์...", style="info")
@@ -375,11 +399,7 @@ class JobThaiRowScraper:
                     console.print(f"🎉 Login สำเร็จ! (รอบที่ {attempt})", style="bold green")
                     return True
                 except TimeoutException:
-                    # เช็ค Error บนหน้าเว็บ
-                    try:
-                        err = self.driver.find_element(By.CSS_SELECTOR, ".error-message, .alert-danger, .text-danger").text
-                        console.print(f"   ❌ Login Error Message: {err}", style="bold red")
-                    except: pass
+                    console.print(f"   ❌ Login Error (Timeout)", style="bold red")
 
             except Exception as e:
                 console.print(f"   ⚠️ Error รอบที่ {attempt}: {e}", style="warning")
@@ -387,67 +407,6 @@ class JobThaiRowScraper:
         
         console.print("🔄 ใช้แผนสำรอง Cookie Bypass...", style="bold yellow")
         return self.login_with_cookie()
-    def login_with_cookie(self):
-        cookies_env = os.getenv("COOKIES_JSON")
-        if not cookies_env: 
-            console.print("❌ ไม่พบ COOKIES_JSON", style="error")
-            return False
-            
-        try:
-            console.print("🍪 กำลังโหลด Cookie...", style="info")
-            
-            # 1. เข้าหน้าเว็บเปล่าๆ ของ Domain นั้นก่อน (สำคัญมาก เพื่อให้ Domain scope ตรงกัน)
-            self.driver.get("https://www.jobthai.com/th/employer")
-            self.random_sleep(2, 3)
-            
-            # 2. ลบ Cookie เดิมที่ติดมากับ Session ใหม่ทิ้งให้หมด
-            self.driver.delete_all_cookies()
-            
-            # 3. แปลงและยัด Cookie
-            cookies_list = json.loads(cookies_env)
-            for cookie in cookies_list:
-                # คัดเฉพาะ Key ที่ Selenium รองรับ (ถ้าเอา key แปลกๆ ไปด้วย จะ Error)
-                cookie_dict = {
-                    'name': cookie.get('name'),
-                    'value': cookie.get('value'),
-                    'domain': cookie.get('domain'), # สำคัญ: ต้องตรงกับเว็บที่เปิด
-                    'path': cookie.get('path', '/'),
-                    # 'secure': cookie.get('secure', False), # บางทีใส่ Secure แล้วพัง ถ้าเว็บไม่ strict ให้ comment ออก
-                    # 'expiry': cookie.get('expirationDate') # ไม่ต้องใส่ expiry ก็ได้ ถ้าอยากให้เป็น Session Cookie
-                }
-                
-                # Fix Domain: บางที Cookie มาเป็น .jobthai.com แต่เราเข้า www.jobthai.com
-                # ให้ตัดจุดข้างหน้าออกเพื่อความชัวร์
-                if 'jobthai' in str(cookie_dict['domain']):
-                    try:
-                        self.driver.add_cookie(cookie_dict)
-                    except Exception as e:
-                        # ถ้า add ไม่เข้า ข้ามไป (บางอันเป็น 3rd party cookie)
-                        pass
-            
-            console.print("   ✅ ยัด Cookie เสร็จแล้ว -> Refresh หน้าจอ", style="dim")
-            
-            # 4. Refresh เพื่อให้ Cookie ทำงาน
-            self.driver.refresh()
-            self.wait_for_page_load()
-            self.random_sleep(3, 5)
-
-            # 5. เช็คว่าเข้าได้จริงไหม
-            if "login" not in self.driver.current_url and "dashboard" in self.driver.current_url:
-                console.print("🎉 Bypass Login สำเร็จด้วย Cookie!", style="success")
-                return True
-            else:
-                # ลองไปหน้า Resume โดยตรงอีกทีเพื่อความชัวร์
-                self.driver.get("https://www3.jobthai.com/findresume/findresume.php?l=th")
-                self.random_sleep(2, 3)
-                if "login" not in self.driver.current_url:
-                     console.print("🎉 Bypass Login สำเร็จ! (Check Step 2)", style="success")
-                     return True
-
-        except Exception as e:
-            console.print(f"❌ Cookie Error: {e}", style="error")
-        
-        return False
 
     def step2_search(self, keyword):
         search_url = "https://www3.jobthai.com/findresume/findresume.php?l=th"
