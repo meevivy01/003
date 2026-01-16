@@ -763,6 +763,75 @@ class JobThaiRowScraper:
             
             return False
 
+
+    # ---------------------------------------------------------
+    # 🟢 [NEW] ฟังก์ชันเช็คและล็อกอินใหม่ (แทรกตรงนี้)
+    # ---------------------------------------------------------
+    def check_and_relogin(self):
+        """ ตรวจสอบว่า Session หลุดหรือไม่ ถ้าหลุดให้ล็อกอินใหม่ทันที """
+        console.rule("[bold magenta]🕵️‍♂️ ตรวจสอบสถานะ Session (Auto-ReLogin System)[/]")
+        
+        # URL ที่ใช้เช็ค (หน้า Login)
+        LOGIN_URL = "https://www.jobthai.com/th/login"
+        
+        try:
+            # 1. เช็คว่ามีปุ่ม Login โผล่มาหรือไม่ (ถ้ามี = หลุด)
+            is_logged_out = False
+            try:
+                # ลองหาปุ่มที่มีคำว่า "เข้าสู่ระบบ" หรือ "Log In" แบบเร็วๆ (3 วิ)
+                WebDriverWait(self.driver, 3).until(
+                    EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'เข้าสู่ระบบ') or contains(text(), 'Log In')]"))
+                )
+                is_logged_out = True
+                console.print("⚠️ ตรวจพบสถานะ: [red]Session หลุด (Logged Out)[/]", style="bold red")
+            except:
+                console.print("✅ ตรวจพบสถานะ: [green]ยังล็อกอินอยู่ (Active Session)[/]", style="bold green")
+
+            # 2. ถ้าหลุด ให้ทำการ Re-Login
+            if is_logged_out:
+                console.print("🔄 กำลังดำเนินการ Re-Login...", style="yellow")
+                self.driver.get(LOGIN_URL)
+                self.wait_for_page_load()
+                time.sleep(2)
+
+                # --- กรอก Username ---
+                user_input = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.ID, "login-form-username")) # ใช้ ID ตามโค้ดเดิมของคุณ
+                )
+                user_input.clear()
+                user_input.send_keys(MY_USERNAME) # ใช้ตัวแปร Global จาก .env
+                
+                # --- กรอก Password ---
+                pass_input = self.driver.find_element(By.ID, "login-form-password")
+                pass_input.clear()
+                pass_input.send_keys(MY_PASSWORD) # ใช้ตัวแปร Global จาก .env
+
+                # --- กดปุ่ม Login ---
+                try:
+                    login_btn = self.driver.find_element(By.ID, "login_company")
+                    self.driver.execute_script("arguments[0].click();", login_btn)
+                except:
+                    # Fallback กด Enter
+                    pass_input.send_keys(Keys.ENTER)
+
+                console.print("⏳ กดปุ่ม Login แล้ว... รอ Redirect...", style="dim")
+                
+                # รอจนกว่าจะกลับเข้าสู่ระบบ (URL เปลี่ยน หรือเจอ Dashboard)
+                WebDriverWait(self.driver, 15).until(
+                    lambda d: "login" not in d.current_url
+                )
+                time.sleep(3) 
+                
+                console.print("✅ Re-Login สำเร็จ! พร้อมทำงานต่อ", style="bold green")
+            
+            return True
+
+        except Exception as e:
+            console.print(f"❌ เกิดข้อผิดพลาดในระบบ Re-Login: {e}", style="error")
+            # ถ้า Re-login พัง ให้ลองใช้ Cookie สำรอง
+            return self.login_with_cookie()
+            
+
     def step3_collect_all_links(self):
         collected_links = []
         page_num = 1
@@ -1516,6 +1585,11 @@ class JobThaiRowScraper:
         console.print(f"📅 Status Check: Today is Friday? [{'Yes' if is_friday else 'No'}] | Manual Run? [{'Yes' if is_manual_run else 'No'}]", style="bold yellow")
         
         for index, keyword in enumerate(SEARCH_KEYWORDS):
+            
+            # 🟢 [NEW] เรียกใช้ฟังก์ชันเช็คสถานะก่อนเริ่มงานใหม่ทุกครั้ง
+            if index > 0: # ทำตั้งแต่คำที่ 2 เป็นต้นไป (คำแรกเพิ่งล็อกอินมา ไม่ต้องเช็ค)
+                self.check_and_relogin()
+
             # 🟢 [เพิ่ม] 1. เตรียมหน้าประวัติ (Tab) ตามกลุ่มของ Keyword ก่อนเริ่มค้นหา
             self.prepare_history_for_keyword(keyword)
 
