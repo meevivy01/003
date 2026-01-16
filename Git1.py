@@ -1665,11 +1665,6 @@ class JobThaiRowScraper:
         console.print(f"📅 Status Check: Today is Friday? [{'Yes' if is_friday else 'No'}] | Manual Run? [{'Yes' if is_manual_run else 'No'}]", style="bold yellow")
         
         for index, keyword in enumerate(SEARCH_KEYWORDS):
-            
-            # 🟢 [NEW] เรียกใช้ฟังก์ชันเช็คสถานะก่อนเริ่มงานใหม่ทุกครั้ง
-            if index > 0: # ทำตั้งแต่คำที่ 2 เป็นต้นไป (คำแรกเพิ่งล็อกอินมา ไม่ต้องเช็ค)
-                self.check_and_relogin()
-
             # 🟢 [เพิ่ม] 1. เตรียมหน้าประวัติ (Tab) ตามกลุ่มของ Keyword ก่อนเริ่มค้นหา
             self.prepare_history_for_keyword(keyword)
 
@@ -1707,7 +1702,7 @@ class JobThaiRowScraper:
                                         if EMAIL_USE_HISTORY and person_data['id'] in self.current_history_data:
                                             try:
                                                 last_notify = datetime.datetime.strptime(self.current_history_data[person_data['id']], "%Y-%m-%d").date()
-                                                if (today - last_notify).days < 7: should_add = False
+                                                if (today - last_notify).days < 7: should_add = True
                                             except: pass
                                     if should_add: current_keyword_batch.append(person_data)
 
@@ -1717,7 +1712,8 @@ class JobThaiRowScraper:
                                         if EMAIL_USE_HISTORY and person_data['id'] in self.current_history_data:
                                              try:
                                                   last_notify = datetime.datetime.strptime(self.current_history_data[person_data['id']], "%Y-%m-%d").date()
-                                                  if (today - last_notify).days < 1: should_hot = False
+                                                  if (today - last_notify).days < 1: should_hot = True              
+                                                  #False
                                              except: pass
                                         
                                         if should_hot:
